@@ -280,7 +280,48 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eig
     // Use: Instead of passing the triangle's color directly to the frame buffer, pass the color to the shaders first to get the final color;
     // Use: auto pixel_color = fragment_shader(payload);
 
- 
+    int min_x = std::min(std::min(t.v[0].x(), t.v[1].x()), t.v[2].x());
+    int max_x = std::max(std::max(t.v[0].x(), t.v[1].x()), t.v[2].x());
+    int min_y = std::min(std::min(t.v[0].y(), t.v[1].y()), t.v[2].y());
+    int max_y = std::max(std::max(t.v[0].y(), t.v[1].y()), t.v[2].y());
+
+    for (int x = min_x; x <= max_x; x++)
+    {
+        for (int y = min_y; y <= max_y; y++)
+        {
+            if (insideTriangle(x, y , t.v))
+            {
+                auto [alpha, beta, gamma] = computeBarycentric2D(x, y, t.toVector4());
+
+                float Z = 1.0 / (alpha / t.v[0].w() + beta / t.v[1].w() + gamma / t.v[2].w());
+                float zp = alpha * t.v[0].z() / t.v[0].w() + beta * t.v[1].z() / t.v[1].w() + gamma * t.v[2].z() / t.v[2].w();
+                zp *= Z;
+
+                if (zp < depth_buf[get_index(x, y)])
+                {
+                    depth_buf[get_index(x, y)] = zp;
+
+                    auto interpolated_color = alpha * t.color[0] + beta * t.color[1] + gamma * t.color[2];
+                    auto interpolated_normal = alpha * t.normal[0] + beta * t.normal[1] + gamma * t.normal[2];
+                    auto interpolated_texcoords = alpha * t.tex_coords[0] + beta * t.tex_coords[1] + gamma * t.tex_coords[2];
+                    auto interpolated_shadingcoords = alpha * view_pos[0] + beta * view_pos[1] + gamma * view_pos[2];
+
+                    fragment_shader_payload payload( interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, texture ? &*texture : nullptr);
+                    payload.view_pos = interpolated_shadingcoords;
+                    auto pixel_color = fragment_shader(payload);
+                    set_pixel(Vector2i(x, y), pixel_color);
+                }
+            }
+        }
+    }
+}
+
+std::tuple<float, float, float> rst::rasterizer::computeBarycentric2D(int x, int y, std::array<Eigen::Vector4f, 3> v)
+{
+    float c1 = (x*(v[1].y() - v[2].y()) + (v[2].x() - v[1].x())*y + v[1].x()*v[2].y() - v[2].x()*v[1].y()) / (v[0].x()*(v[1].y() - v[2].y()) + (v[2].x() - v[1].x())*v[0].y() + v[1].x()*v[2].y() - v[2].x()*v[1].y());
+    float c2 = (x*(v[2].y() - v[0].y()) + (v[0].x() - v[2].x())*y + v[2].x()*v[0].y() - v[0].x()*v[2].y()) / (v[1].x()*(v[2].y() - v[0].y()) + (v[0].x() - v[2].x())*v[1].y() + v[2].x()*v[0].y() - v[0].x()*v[2].y());
+    float c3 = (x*(v[0].y() - v[1].y()) + (v[1].x() - v[0].x())*y + v[0].x()*v[1].y() - v[1].x()*v[0].y()) / (v[2].x()*(v[0].y() - v[1].y()) + (v[1].x() - v[0].x())*v[2].y() + v[0].x()*v[1].y() - v[1].x()*v[0].y());
+    return {c1,c2,c3};
 }
 
 void rst::rasterizer::set_model(const Eigen::Matrix4f& m)

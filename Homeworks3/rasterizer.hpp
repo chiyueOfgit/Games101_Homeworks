@@ -90,6 +90,8 @@ namespace rst
         void rasterize_triangle(const Triangle& t, const std::array<Eigen::Vector3f, 3>& world_pos);
 
         // VERTEX SHADER -> MVP -> Clipping -> /.W -> VIEWPORT -> DRAWLINE/DRAWTRI -> FRAGSHADER
+        
+        std::tuple<float, float, float> computeBarycentric2D(int x, int y, std::array<Eigen::Vector4f, 3> v);
 
     private:
         Eigen::Matrix4f model;
