@@ -63,7 +63,7 @@ Eigen::Matrix4f get_projection_matrix(float eye_fov, float aspect_ratio, float z
         0, 0, zNear + zFar, -zNear * zFar,
         0, 0, 1, 0;
 
-    float t = tan(eye_fov / 180 * MY_PI / 2) * fabs(zNear);
+    float t = -tan(eye_fov / 180 * MY_PI / 2) * fabs(zNear);
     float b = -t;
     float r = aspect_ratio * t;
     float l = -r;
@@ -148,6 +148,7 @@ Eigen::Vector3f texture_fragment_shader(const fragment_shader_payload& payload)
 
 Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
 {
+    // 系数是对应分量相乘
     Eigen::Vector3f ka = Eigen::Vector3f(0.005, 0.005, 0.005);
     Eigen::Vector3f kd = payload.color;
     Eigen::Vector3f ks = Eigen::Vector3f(0.7937, 0.7937, 0.7937);
@@ -170,7 +171,20 @@ Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
     {
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
+
+        float LightToShadingPointDistance = (light.position - point).norm();
+        Eigen::Vector3f LightDirection = (light.position - point).normalized();
+        Eigen::Vector3f ViewDirection = (eye_pos - point).normalized();
+        Eigen::Vector3f ArrivedEngery = light.intensity / (LightToShadingPointDistance * LightToShadingPointDistance);
+
+        Eigen::Vector3f La = ka.array() * amb_light_intensity.array();
+        Eigen::Vector3f Ld = kd.array() * ArrivedEngery.array()  * std::max(0.f, normal.dot(LightDirection));
+
+
+        Eigen::Vector3f HalfVector = (LightDirection + ViewDirection).normalized();
+        Eigen::Vector3f Ls = ks.array() * ArrivedEngery.array() * std::powf(std::max(0.f, normal.dot(HalfVector)), p);
         
+        result_color += (La + Ld + Ls);
     }
 
     return result_color * 255.f;
@@ -299,7 +313,7 @@ int main(int argc, const char** argv)
     auto texture_path = "hmap.jpg";
     r.set_texture(Texture(obj_path + texture_path));
 
-    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = normal_fragment_shader;
+    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = phong_fragment_shader;
 
     if (argc >= 2)
     {
