@@ -106,12 +106,38 @@ struct light
     Eigen::Vector3f intensity;
 };
 
+static Eigen::Vector3f ComputeBlinnPhongReflectionModelColor(const light& light,
+    const Eigen::Vector3f& point,
+    const Eigen::Vector3f& normal,
+    const Eigen::Vector3f& eye_pos,
+    const Eigen::Vector3f& ka,
+    const Eigen::Vector3f& kd,
+    const Eigen::Vector3f& ks,
+    const Eigen::Vector3f& amb_light_intensity,
+    float p)
+{
+    float LightToShadingPointDistance = (light.position - point).norm();
+    Eigen::Vector3f LightDirection = (light.position - point).normalized();
+    Eigen::Vector3f ViewDirection = (eye_pos - point).normalized();
+    Eigen::Vector3f ArrivedEngery = light.intensity / (LightToShadingPointDistance * LightToShadingPointDistance);
+
+    Eigen::Vector3f La = ka.array() * amb_light_intensity.array();
+    Eigen::Vector3f Ld = kd.array() * ArrivedEngery.array()  * std::max(0.f, normal.dot(LightDirection));
+
+
+    Eigen::Vector3f HalfVector = (LightDirection + ViewDirection).normalized();
+    Eigen::Vector3f Ls = ks.array() * ArrivedEngery.array() * std::powf(std::max(0.f, normal.dot(HalfVector)), p);
+
+    return La + Ld + Ls;
+}
+
 Eigen::Vector3f texture_fragment_shader(const fragment_shader_payload& payload)
 {
     Eigen::Vector3f return_color = {0, 0, 0};
     if (payload.texture)
     {
         // TODO: Get the texture value at the texture coordinates of the current fragment
+        return_color = payload.texture->getColor(payload.tex_coords.x(), payload.tex_coords.y());
 
     }
     Eigen::Vector3f texture_color;
@@ -141,6 +167,11 @@ Eigen::Vector3f texture_fragment_shader(const fragment_shader_payload& payload)
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
 
+        auto LightReflectionColor = ComputeBlinnPhongReflectionModelColor(light, point, normal, eye_pos,
+            ka, kd, ks, amb_light_intensity, p);
+
+        result_color += LightReflectionColor;
+
     }
 
     return result_color * 255.f;
@@ -148,7 +179,6 @@ Eigen::Vector3f texture_fragment_shader(const fragment_shader_payload& payload)
 
 Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
 {
-    // 系数是对应分量相乘
     Eigen::Vector3f ka = Eigen::Vector3f(0.005, 0.005, 0.005);
     Eigen::Vector3f kd = payload.color;
     Eigen::Vector3f ks = Eigen::Vector3f(0.7937, 0.7937, 0.7937);
@@ -171,20 +201,10 @@ Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
     {
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
-
-        float LightToShadingPointDistance = (light.position - point).norm();
-        Eigen::Vector3f LightDirection = (light.position - point).normalized();
-        Eigen::Vector3f ViewDirection = (eye_pos - point).normalized();
-        Eigen::Vector3f ArrivedEngery = light.intensity / (LightToShadingPointDistance * LightToShadingPointDistance);
-
-        Eigen::Vector3f La = ka.array() * amb_light_intensity.array();
-        Eigen::Vector3f Ld = kd.array() * ArrivedEngery.array()  * std::max(0.f, normal.dot(LightDirection));
-
-
-        Eigen::Vector3f HalfVector = (LightDirection + ViewDirection).normalized();
-        Eigen::Vector3f Ls = ks.array() * ArrivedEngery.array() * std::powf(std::max(0.f, normal.dot(HalfVector)), p);
+        auto LightReflectionColor = ComputeBlinnPhongReflectionModelColor(light, point, normal, eye_pos,
+            ka, kd, ks, amb_light_intensity, p);
         
-        result_color += (La + Ld + Ls);
+        result_color += LightReflectionColor;
     }
 
     return result_color * 255.f;
@@ -225,6 +245,20 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
     // Position p = p + kn * n * h(u,v)
     // Normal n = normalize(TBN * ln)
 
+    // auto n = normal;
+    // auto x = n.x();
+    // auto y = n.y();
+    // auto z = n.z();
+    // Eigen::Vector3f t(x*y/sqrt(x*x+z*z),sqrt(x*x+z*z),z*y/sqrt(x*x+z*z));
+    // Eigen::Vector3f b = n.cross(t);
+    // Eigen::MatrixX3f TBN;
+    // TBN << t,b,n;
+    // dU = kh * kn * (h(u+1/w,v)-h(u,v))
+    // dV = kh * kn * (h(u,v+1/h)-h(u,v))
+    // Vector ln = (-dU, -dV, 1)
+    // Position p = p + kn * n * h(u,v)
+    // Normal n = normalize(TBN * ln)
+
 
     Eigen::Vector3f result_color = {0, 0, 0};
 
@@ -232,6 +266,11 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
     {
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
+
+        auto LightReflectionColor = ComputeBlinnPhongReflectionModelColor(light, point, normal, eye_pos,
+    ka, kd, ks, amb_light_intensity, p);
+
+        result_color += LightReflectionColor;
 
 
     }
@@ -313,7 +352,10 @@ int main(int argc, const char** argv)
     auto texture_path = "hmap.jpg";
     r.set_texture(Texture(obj_path + texture_path));
 
-    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = phong_fragment_shader;
+    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = texture_fragment_shader;
+
+    texture_path = "spot_texture.png";
+    r.set_texture(Texture(obj_path + texture_path));
 
     if (argc >= 2)
     {
